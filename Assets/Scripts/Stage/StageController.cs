@@ -118,30 +118,30 @@ namespace Dimension.Stage
             colliderMesh = stageData.colliderMesh;
 
             // 読み込み
-            StringReader reader = new StringReader(stageData.data.text);
+            //StringReader reader = new StringReader(stageData.data.text);
 
-            StageForward = Conversion.StringToVector3(reader.ReadLine());
-            StartPoint   = Conversion.StringToVector3(reader.ReadLine());
-            GoalPoint    = Conversion.StringToVector3(reader.ReadLine());
+            //StageForward = Conversion.StringToVector3(reader.ReadLine());
+            //StartPoint   = Conversion.StringToVector3(reader.ReadLine());
+            //GoalPoint    = Conversion.StringToVector3(reader.ReadLine());
 
-            // 計算
-            DataCalculation();
+            //// 計算
+            //DataCalculation();
 
-            // 2Dから3Dに変換するときに戻る位置 右
-            backLinesRight = ReadBackLines(ref reader);
+            //// 2Dから3Dに変換するときに戻る位置 右
+            //backLinesRight = ReadBackLines(ref reader);
 
-            // 2Dから3Dに変換するときに戻る位置 左
-            backLinesLeft = ReadBackLines(ref reader);
+            //// 2Dから3Dに変換するときに戻る位置 左
+            //backLinesLeft = ReadBackLines(ref reader);
 
-            // リスポーン地点
-            int num = int.Parse(reader.ReadLine());
-            ReSpawrnList = new Vector3[num];
-            for (int i = 0; i < ReSpawrnList.Length; ++i) {
-                // 読み込んだ位置をワールド座標に
-                ReSpawrnList[i] = StageToWorld(Conversion.StringToVector3(reader.ReadLine()));
-            }
+            //// リスポーン地点
+            //int num = int.Parse(reader.ReadLine());
+            //ReSpawrnList = new Vector3[num];
+            //for (int i = 0; i < ReSpawrnList.Length; ++i) {
+            //    // 読み込んだ位置をワールド座標に
+            //    ReSpawrnList[i] = StageToWorld(Conversion.StringToVector3(reader.ReadLine()));
+            //}
 
-            reader.Close();
+            //reader.Close();
         }
         //-----------------------------------------------------
         //  2Dから3Dへ変換するときの位置情報の読み込み

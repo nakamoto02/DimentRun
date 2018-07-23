@@ -1,19 +1,16 @@
-#if UNITY_EDITOR
 using System.Collections.Generic;
-using System.Collections;
 using UnityEditor;
 using UnityEngine;
+using Dimension;
 
 [CustomEditor(typeof(Tile3D))]
 public class Tile3DEditor : Editor
 {
     public Tile3D tiler { get { return (Tile3D)target; } }
     public Vector3 origin { get { return tiler.transform.position; } }
-    //=========================================================================
-    //
-    //  ToolMode
-    //
-    //=========================================================================
+
+    #region Tool
+    
     public enum ToolMode
     {
         Transform,
@@ -54,7 +51,10 @@ public class Tile3DEditor : Editor
         ReSpawrn
     }
     private BackModes backMode = BackModes.Right;
-    //=========================================================================
+
+    #endregion
+
+    #region EdiorData
 
     // 単体選択しているときの選択しているブロックの保存するクラス
     private class SingleSelection
@@ -79,16 +79,192 @@ public class Tile3DEditor : Editor
     // active selections
     private SingleSelection hover = null;
     private MultiSelection selected = null;
-    private Face brush = new Face() { Hidden = true };
+    private Tile3D.Face brush = new Tile3D.Face() { Hidden = true };
     // 選択状況のデータ
     private Event e;    // 処理中のcurrentイベント
     private bool invokeRepaint = false; // 塗り替えるかどうか
     private bool draggingBlock = false; // ブロックを複数選択しているかどうか
     private bool interacting = false; // 
 
+    #endregion
+
+    #region CreateData
+
+    bool isExecution = false;
+
+    Vector3 stageForward;   // ステージ正面方向
+    Vector3 startPosition;  // スタート位置
+    Vector3 goalPosition;   // ゴール位置
+
+    List<Vector3> respawnPoints     = new List<Vector3>();
+    List<BackLine> backLinesRight   = new List<BackLine>();
+    List<BackLine> backLinesLeft    = new List<BackLine>();
+
+    // PATH
+    const string DATA_PATH = "Assets/StageBuilder/StageData/Data/";
+    const string MESH_PATH = "Assets/StageBuilder/StageData/Mesh/";
+
+    //-----------------------------------------------------
+    // 新しく作成
+    //-----------------------------------------------------
+    public void NewData()
+    {
+        isExecution = true;
+        Debug.Log("Create Start");
+
+        StageData data = CreateData();  // データの作成
+        UpdateData(ref data);           // データ更新
+        tiler.stageData = data;         // 変数に登録
+
+        Debug.Log("Create Finish");
+        isExecution = false;
+    }
+    //-----------------------------------------------------
+    // 保存
+    //-----------------------------------------------------
+    public void SaveStage()
+    {
+        isExecution = true;
+        Debug.Log("Save Start");
+
+        UpdateData(ref tiler.stageData);  // データ更新
+
+        Debug.Log("Save Finish");
+        isExecution = false;
+    }
+    //-----------------------------------------------------
+    //  読み込み
+    //-----------------------------------------------------
+    public void LoadStage()
+    {
+        isExecution = true;
+        Debug.Log("Load Start");
+
+        ReadData(tiler.stageData);        // データ読み込み
+
+        Debug.Log("Load Finish");
+        isExecution = false;
+    }
+
+    //-----------------------------------------------------
+    //  StageData作成
+    //-----------------------------------------------------
+    StageData CreateData()
+    {
+        // ScriptableObject準備
+        StageData data = new StageData
+        {
+            name = tiler.stageName,
+        };
+        // Meshの作成
+        Mesh renderMesh     = tiler.RenderMesh;
+        Mesh colliderMesh   = tiler.ColliderMesh;
+        renderMesh.name     = data.name + " Render Mesh";
+        colliderMesh.name   = data.name + " Collider Mesh";
+        AssetDatabase.CreateAsset(renderMesh,   MESH_PATH + renderMesh.name   + ".asset");
+        AssetDatabase.CreateAsset(colliderMesh, MESH_PATH + colliderMesh.name + ".asset");
+        data.renderMesh     = renderMesh;
+        data.colliderMesh   = colliderMesh;
+
+        // StageDataを保存
+        AssetDatabase.CreateAsset(data, DATA_PATH + data.name + ".asset");
+
+        return data;
+    }
+    //-----------------------------------------------------
+    // StageData更新
+    //-----------------------------------------------------
+    void UpdateData(ref StageData data)
+    {
+        // Mesh準備
+        Mesh renderMesh   = tiler.RenderMesh;
+        Mesh colliderMesh = tiler.ColliderMesh;
+
+        // 変更開始
+        AssetDatabase.StartAssetEditing();
+
+        // Data
+        data.blocks                 = tiler.Blocks.ToArray();
+        data.renderMesh.vertices    = renderMesh.vertices;
+        data.renderMesh.triangles   = renderMesh.triangles;
+        data.renderMesh.uv          = renderMesh.uv;
+        data.colliderMesh.vertices  = colliderMesh.vertices;
+        data.colliderMesh.triangles = colliderMesh.triangles;
+        data.colliderMesh.uv        = colliderMesh.uv;
+        data.stageForward           = stageForward;             // ステージの正面方向
+        data.startPoint             = startPosition;            // スタートの位置
+        data.goalPoint              = goalPosition;             // ゴールの位置
+        data.respawnPoints          = respawnPoints.ToArray();  // 復帰地点
+        data.backLinesRight         = backLinesRight.ToArray(); // 2Dから3Dへ切り替える際の戻る位置(右)
+        data.backLinesLeft          = backLinesLeft.ToArray();  // 2Dから3Dへ切り替える際の戻る位置(左)
+
+        AssetDatabase.StopAssetEditing();   // 変更完了
+        EditorUtility.SetDirty(data);       // 変更をUnityEditorに伝える
+        AssetDatabase.SaveAssets();         // すべてのアセットを保存
+    }
+    //-----------------------------------------------------
+    //  StageDataの読み込み
+    //-----------------------------------------------------
+    void ReadData(StageData data)
+    {
+        // データの読み込み
+        tiler.Blocks.Clear();
+        tiler.Blocks.AddRange(data.blocks);
+
+        stageForward    = data.stageForward;            // ステージ正面方向
+        startPosition   = data.startPoint;              // スタートの位置
+        goalPosition    = data.goalPoint;               // ゴールの位置
+        respawnPoints.Clear();                          // 復帰地点リセット
+        backLinesRight.Clear();                         // 2Dから3Dへ切り替える際の戻る位置(右)リセット
+        backLinesLeft.Clear();                          // 2Dから3Dへ切り替える際の戻る位置(左)リセット
+        respawnPoints.AddRange(data.respawnPoints);     // 復帰地点
+        backLinesRight.AddRange(data.backLinesRight);   // 2Dから3Dへ切り替える際の戻る位置(右)
+        backLinesLeft.AddRange(data.backLinesLeft);     // 2Dから3Dへ切り替える際の戻る位置(左)
+
+        // ステージ情報の更新
+        tiler.RebuildBlockMap();
+        tiler.Rebuild();
+    }
+    //-----------------------------------------------------
+    //  一時的データの保存
+    //-----------------------------------------------------
+    void OneSaveData()
+    {
+        StageData data = new StageData {
+            stageForward    = stageForward,
+            startPoint      = startPosition,
+            goalPoint       = goalPosition,
+            respawnPoints   = respawnPoints.ToArray(),
+            backLinesRight  = backLinesRight.ToArray(),
+            backLinesLeft   = backLinesLeft.ToArray()
+        };
+
+        tiler.oneTimeSave = data;
+    }
+    void OneReadData()
+    {
+        StageData data = tiler.oneTimeSave;
+
+        stageForward = data.stageForward;
+        startPosition = data.startPoint;
+        goalPosition = data.goalPoint;
+        respawnPoints.Clear();
+        backLinesRight.Clear();
+        backLinesLeft.Clear();
+        respawnPoints.AddRange(data.respawnPoints);
+        backLinesRight.AddRange(data.backLinesRight);
+        backLinesLeft.AddRange(data.backLinesLeft);
+    }
+        
+        
+    #endregion
+
+    #region DefaultEvent
+
     private void OnEnable()
     {
-        tiler.isExecution = false;
+        isExecution = false;
+        //OneReadData();
         InitStageVector();
 
         Undo.undoRedoPerformed += OnUndoRedo;
@@ -96,6 +272,8 @@ public class Tile3DEditor : Editor
 
     private void OnDisable()
     {
+        //OneSaveData();
+
         Undo.undoRedoPerformed -= OnUndoRedo;
     }
 
@@ -117,21 +295,6 @@ public class Tile3DEditor : Editor
         serializedObject.Update();
         EditorGUILayout.PropertyField(serializedObject.FindProperty("stageData"));
         serializedObject.ApplyModifiedProperties();
-
-        EditorGUI.BeginDisabledGroup(!tiler.IsCreate);
-        if (GUILayout.Button("New Data"))
-            tiler.CreateData();
-        EditorGUI.EndDisabledGroup();
-
-        EditorGUI.BeginDisabledGroup(!tiler.IsSave);
-        if (GUILayout.Button("Save Stage"))
-            tiler.SaveStage();
-        EditorGUI.EndDisabledGroup();
-
-        EditorGUI.BeginDisabledGroup(!tiler.IsLoad);
-        if (GUILayout.Button("Load Stage"))
-            tiler.LoadStage();
-        EditorGUI.EndDisabledGroup();
     }
 
     protected virtual void OnSceneGUI()
@@ -213,6 +376,11 @@ public class Tile3DEditor : Editor
         // later should detect if something is being grabbed or hovered
         Selection.activeGameObject = tiler.transform.gameObject;
     }
+
+    #endregion
+
+    #region Tile3D Editor
+
     //-----------------------------------------------------
     //  選択状況の初期化
     //-----------------------------------------------------
@@ -256,6 +424,8 @@ public class Tile3DEditor : Editor
         if (hover != null) DrawSelection(hover, Color.magenta);
         if (selected != null) DrawSelection(selected, Color.blue);
     }
+
+    #endregion
 
     #region MoveTool
     //-----------------------------------------------------
@@ -411,7 +581,6 @@ public class Tile3DEditor : Editor
     //  StageTool
     //
     //=========================================================================
-    Vector3 stageForward;   // ステージ正面方向
     Vector3 stageRight;     // ステージ右方向
     // ステージの座標をワールド座標に
     Vector3 StageToWorld(Vector3 stage)
@@ -426,7 +595,6 @@ public class Tile3DEditor : Editor
     // ステージの軸を計算
     void InitStageVector()
     {
-        stageForward = tiler.StageForward;
         stageRight = Quaternion.Euler(new Vector3(0, 90, 0)) * stageForward;
         stageRight = new Vector3(Mathf.Round(stageRight.x), 0, Mathf.Round(stageRight.z));
     }
@@ -453,17 +621,17 @@ public class Tile3DEditor : Editor
     {
         if (backMode == BackModes.Right)
         {
-            DrawBackLineList(ref tiler.backLinesRight);
+            DrawBackLineList(ref backLinesRight);
         }
         else
         if (backMode == BackModes.Left)
         {
-            DrawBackLineList(ref tiler.backLinesLeft);
+            DrawBackLineList(ref backLinesLeft);
         }
         else
         if (backMode == BackModes.ReSpawrn)
         {
-            DrawReSpawnPoint(ref tiler.respawnPoints);
+            DrawReSpawnPoint(ref respawnPoints);
         }
     }
     // 2Dから3Dに戻る際の位置を表示
@@ -526,10 +694,12 @@ public class Tile3DEditor : Editor
             ++cnt;
         }
     }
-    //=========================================================================
+
     #endregion
 
-    private bool SetBlockFace(Block block, Vector3 normal, Face brush)
+    #region Tile3D CreateBlock
+
+    private bool SetBlockFace(Tile3D.Block block, Vector3 normal, Tile3D.Face brush)
     {
         Undo.RecordObject(target, "SetBlockFaces");
 
@@ -556,7 +726,7 @@ public class Tile3DEditor : Editor
         return false;
     }
 
-    private Face GetBlockFace(Block block, Vector3 face)
+    private Tile3D.Face GetBlockFace(Tile3D.Block block, Vector3 face)
     {
         for (int i = 0; i < Tile3D.Faces.Length; i++)
         {
@@ -567,13 +737,13 @@ public class Tile3DEditor : Editor
         return block.Faces[0];
     }
 
-    private bool FillBlockFace(Block block, Face face)
+    private bool FillBlockFace(Tile3D.Block block, Tile3D.Face face)
     {
         Vector3Int perp1, perp2;
         GetPerpendiculars(hover.Face, out perp1, out perp2);
 
-        var active = new List<Block>();
-        var filled = new HashSet<Block>();
+        var active = new List<Tile3D.Block>();
+        var filled = new HashSet<Tile3D.Block>();
         var directions = new Vector3Int[4] { perp1, perp1 * -1, perp2, perp2 * -1 };
         var outwards = hover.Face.Int();
         var changed = false;
@@ -694,15 +864,18 @@ public class Tile3DEditor : Editor
 
         return null;
     }
+
+    #endregion
+
     #region Window
     //=========================================================================
     //
     //  Window
     //
     //=========================================================================
-    const int WINDOW_UP = 20;   // ウィンドウの上の位置
-    const int WINDOW_LEFT = 10;   // ウィンドウの左の位置
-    const int WINDOW_WIDTH = 180;  // ウィンドウの幅
+    const int WINDOW_UP     = 20;   // ウィンドウの上の位置
+    const int WINDOW_LEFT   = 10;   // ウィンドウの左の位置
+    const int WINDOW_WIDTH  = 180;  // ウィンドウの幅
     const int WINDOW_HEIGHT = 280;  // ウィンドウの高さ
     //-----------------------------------------------------
     //  PaintWindow
@@ -760,69 +933,34 @@ public class Tile3DEditor : Editor
         }
         if (EditorGUI.EndChangeCheck())
         {
-            tiler.StageForward = forward;
+            stageForward = forward;
             InitStageVector();
-            tiler.playerObj.forward = forward;
+            //tiler.playerObj.forward  = forward;
+            //tiler.playerObj.position = StageToWorld(startPosition);
+            //tiler.goalObj.position   = StageToWorld(goalPosition);
         }
 
         // Start
-        bool isSet = tiler.isSetStart;
-        EditorGUI.BeginChangeCheck();
-        {
-            EditorGUILayout.BeginHorizontal();
-            {
-                isSet = EditorGUILayout.Toggle(isSet, GUILayout.Width(15));
-                EditorGUILayout.LabelField("StartPosition");
-            }
-            EditorGUILayout.EndHorizontal();
-        }
-        if (EditorGUI.EndChangeCheck())
-        {
-            tiler.isSetStart = isSet;
-        }
-        if (isSet)
-        {
-            Vector3 startPos = tiler.StartPosition;
-            EditorGUI.BeginChangeCheck();
-            {
-                startPos = EditorGUILayout.Vector3Field("", startPos);
-            }
-            if (EditorGUI.EndChangeCheck())
-            {
-                tiler.StartPosition = startPos;
-                tiler.playerObj.position = StageToWorld(startPos);
-            }
-        }
+        EditorGUILayout.LabelField("StartPosition");
+        //EditorGUI.BeginChangeCheck();
+        //{
+        //    startPosition = EditorGUILayout.Vector3Field("", startPosition);
+        //}
+        //if(EditorGUI.EndChangeCheck() && tiler.playerObj != null)
+        //{
+        //    //tiler.playerObj.position = StageToWorld(startPosition);
+        //}
 
         // Goal
-        isSet = tiler.isSetGoal;
-        EditorGUI.BeginChangeCheck();
-        {
-            EditorGUILayout.BeginHorizontal();
-            {
-                isSet = EditorGUILayout.Toggle(isSet, GUILayout.Width(15));
-                EditorGUILayout.LabelField("GoalPosition");
-            }
-            EditorGUILayout.EndHorizontal();
-        }
-        if (EditorGUI.EndChangeCheck())
-        {
-            tiler.isSetGoal = isSet;
-        }
-        if (isSet)
-        {
-            Vector3 goalPos = tiler.GoalPosition;
-            EditorGUI.BeginChangeCheck();
-            {
-                goalPos = EditorGUILayout.Vector3Field("", goalPos);
-            }
-            if (EditorGUI.EndChangeCheck())
-            {
-                tiler.GoalPosition = goalPos;
-                tiler.goalObj.position = StageToWorld(goalPos);
-            }
-        }
-
+        EditorGUILayout.LabelField("GoalPosition");
+        //EditorGUI.BeginChangeCheck();
+        //{
+        //    goalPosition = EditorGUILayout.Vector3Field("", goalPosition);
+        //}
+        //if(EditorGUI.EndChangeCheck() && tiler.goalObj != null)
+        //{
+        //    tiler.goalObj.position = StageToWorld(goalPosition);
+        //}
     }
     //-----------------------------------------------------
     //  GimickWindow
@@ -854,17 +992,17 @@ public class Tile3DEditor : Editor
 
         if (backMode == BackModes.Right)
         {
-            tiler.backLinesRight = BackLineWindow(tiler.backLinesRight);
+            backLinesRight = BackLineWindow(backLinesRight);
         }
 
         if (backMode == BackModes.Left)
         {
-            tiler.backLinesLeft = BackLineWindow(tiler.backLinesLeft);
+            backLinesLeft = BackLineWindow(backLinesLeft);
         }
 
         if (backMode == BackModes.ReSpawrn)
         {   // リスポーン地点
-            tiler.respawnPoints = ReSpawnPointWindow(tiler.respawnPoints);
+            respawnPoints = ReSpawnPointWindow(respawnPoints);
         }
     }
     // 2Dから3Dに戻す際の位置を指定するウィンドウ
@@ -1095,4 +1233,3 @@ public class Tile3DEditor : Editor
         tar.Rebuild();
     }
 }
-#endif
